@@ -77,8 +77,8 @@ claude-container rebuild          # force image rebuild (--no-cache), then start
   triggers a rebuild on the next start (stale image versions are deleted
   automatically).
 - **Session-scoped containers**: `claude` is the container's main process,
-  run with `--rm`. When the session ends the container is gone — no idle VMs
-  holding RAM. Container names are `claude-<project>-<pathhash>-<pid>`, so
+  run with `--rm`. When claude exits, the container stops and is removed —
+  no idle VMs holding RAM. Container names are `claude-<project>-<pathhash>-<pid>`, so
   concurrent sessions and same-named projects don't collide, and `stop`/`ls`
   are project-aware.
 - **Isolation**: only the project root is mounted (writable, at its host
