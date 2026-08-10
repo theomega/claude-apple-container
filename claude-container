@@ -27,6 +27,7 @@
 # Environment:
 #   ANTHROPIC_API_KEY   forwarded into the container if set; otherwise run
 #                       /login once per project (persists in the state dir)
+#   TERM                forwarded into the container if set
 #   ~/.config/claude-container/env
 #                       optional env file (KEY=value lines) passed to the
 #                       container via --env-file
@@ -203,6 +204,9 @@ run_args=(
   -e IS_SANDBOX=1
 )
 [[ -t 0 && -t 1 ]] && run_args+=(-t)
+# Forward the host terminal type so claude sees the terminal's real
+# capabilities (the runtime would default to plain TERM=xterm).
+[[ -n ${TERM:-} ]] && run_args+=(-e "TERM=$TERM")
 [[ -n ${ANTHROPIC_API_KEY:-} ]] && run_args+=(-e ANTHROPIC_API_KEY)
 [[ -f $ENV_FILE ]] && run_args+=(--env-file "$ENV_FILE")
 

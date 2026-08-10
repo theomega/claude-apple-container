@@ -83,9 +83,9 @@ claude-container rebuild          # force image rebuild (--no-cache), then start
   are project-aware.
 - **Isolation**: only the project root is mounted (writable, at its host
   absolute path). `--dangerously-skip-permissions` is the default because
-  the container is the sandbox. Host git identity and `ANTHROPIC_API_KEY`
-  (if set) are forwarded as environment variables; nothing else from the
-  host is visible.
+  the container is the sandbox. Host git identity, `TERM`, and
+  `ANTHROPIC_API_KEY` (if set) are forwarded as environment variables;
+  nothing else from the host is visible.
 - **User customizations**: two optional paths under
   `~/.config/claude-container/` are mounted read-only into every container:
   `managed-settings.json` at `/etc/claude-code/managed-settings.json`
