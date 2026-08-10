@@ -1,6 +1,6 @@
 FROM docker.io/debian:trixie
 
-# Base tools: curl for the installers below, gnupg for the Chrome repo key, jq for the shared statusline
+# Base tools: curl for the installers below, gnupg for the Chrome repo key, jq for the example statusline
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg jq\
     && rm -rf /var/lib/apt/lists/*

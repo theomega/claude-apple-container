@@ -23,8 +23,7 @@ started in — nothing else on the host.
 
 Clone this repository, then symlink the script into any directory on your
 `PATH`. Use a symlink rather than a copy — the script looks for
-`Dockerfile.default`, `managed-settings.json`, and
-`claude-statusline-command.sh` next to its real (resolved) location:
+`Dockerfile.default` next to its real (resolved) location:
 
 ```sh
 ln -s "$PWD/claude-container" ~/.local/bin/claude-container   # from the checkout; any PATH dir works
@@ -82,14 +81,14 @@ claude-container rebuild          # force image rebuild (--no-cache), then start
   the container is the sandbox. Host git identity and `ANTHROPIC_API_KEY`
   (if set) are forwarded as environment variables; nothing else from the
   host is visible.
-- **Shared claude settings & statusline**: if present next to the script,
-  `managed-settings.json` is mounted read-only at
-  `/etc/claude-code/managed-settings.json` (claude's managed-settings path,
-  highest precedence — global defaults for every container session) and
-  `claude-statusline-command.sh` at `/opt/claude-container/statusline.sh`,
-  which the managed settings reference as the statusline. Edit
-  `managed-settings.json` to add more shared settings; both mounts are
-  skipped silently if the files don't exist.
+- **User customizations**: two optional paths under
+  `~/.config/claude-container/` are mounted read-only into every container:
+  `managed-settings.json` at `/etc/claude-code/managed-settings.json`
+  (claude's managed-settings path, highest precedence — global defaults for
+  every container session) and the entries of the `share/` directory under
+  `/opt/claude-container`, for any files every container should see. Both
+  are skipped silently if the paths don't exist. See
+  [Customization](#customization).
 - **Persistent claude state**: a per-project state dir on the host
   (`~/.cache/claude-container/<project>-<hash>/`) is mounted as claude's
   `CLAUDE_CONFIG_DIR`, so state survives the ephemeral containers. First-run
@@ -98,6 +97,30 @@ claude-container rebuild          # force image rebuild (--no-cache), then start
   directory), OAuth credentials from `/login` are kept here too, and
   `claude --resume` sees the project's earlier sessions. Delete the dir to
   reset a project's claude state (including its login).
+
+## Customization
+
+Everything user-specific lives in `~/.config/claude-container/` — nothing in
+the checkout needs editing. Every entry is optional:
+
+| Path | Effect |
+| --- | --- |
+| `env` | env file (`KEY=value` lines) passed to every container via `--env-file` |
+| `managed-settings.json` | mounted read-only at `/etc/claude-code/managed-settings.json`, claude's managed-settings path — settings here apply to every session with highest precedence |
+| `share/` | its top-level entries are mounted read-only under `/opt/claude-container` — put any files here (scripts, dotfiles, extra config) that every container should see. Entries are resolved on the host first, so they may be symlinks into e.g. a dotfiles repo |
+
+The repo ships examples: a statusline script and a managed-settings file
+that wires it up (it references `/opt/claude-container/statusline.sh`, which
+is `share/statusline.sh` on the host). To use them:
+
+```sh
+mkdir -p ~/.config/claude-container/share
+cp examples/statusline.sh ~/.config/claude-container/share/
+cp examples/managed-settings.json ~/.config/claude-container/
+```
+
+The example statusline needs `jq` in the image; the default and example
+Dockerfiles install it.
 
 ## The Dockerfile.dev contract
 
@@ -115,8 +138,8 @@ The Dockerfile owns the container environment. It must:
    language runtimes). No `COPY` of sources needed — the project root is
    bind-mounted at runtime.
 
-3. Install `jq` — the shared statusline script needs it (plus `bash`, `git`,
-   and `awk`, which most base images already have).
+3. Install `jq` if you use the example statusline — the script needs it
+   (plus `bash`, `git`, and `awk`, which most base images already have).
 
 Since the build context is the project directory, add a `.dockerignore` (e.g.
 `.git`, build output) if the project is large — it keeps rebuilds fast.
@@ -171,3 +194,5 @@ sandbox as root, and the container is already the sandbox.
 | `CC_CPUS` | `4` | container CPUs |
 | `CC_DOCKERFILE` | — | explicit Dockerfile path, skips discovery |
 | `~/.config/claude-container/env` | — | optional `KEY=value` env file passed via `--env-file` (may hold the API key) |
+| `~/.config/claude-container/managed-settings.json` | — | optional; mounted read-only at `/etc/claude-code/managed-settings.json` in every container |
+| `~/.config/claude-container/share/` | — | optional; directory mounted read-only at `/opt/claude-container` in every container |

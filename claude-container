@@ -30,6 +30,13 @@
 #   ~/.config/claude-container/env
 #                       optional env file (KEY=value lines) passed to the
 #                       container via --env-file
+#   ~/.config/claude-container/managed-settings.json
+#                       optional; mounted read-only at claude's managed-
+#                       settings path (/etc/claude-code/managed-settings.json)
+#   ~/.config/claude-container/share/
+#                       optional; entries mounted read-only under
+#                       /opt/claude-container in every container
+#                       (symlinks are resolved on the host first)
 #   CC_MEMORY           container memory (default: 8g)
 #   CC_CPUS             container CPUs (default: 4)
 #   CC_DOCKERFILE       explicit Dockerfile path, skips discovery
@@ -41,10 +48,12 @@ SCRIPT_DIR=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
 : "${CC_MEMORY:=8g}"
 : "${CC_CPUS:=4}"
 
-ENV_FILE="$HOME/.config/claude-container/env"
+CONFIG_DIR="$HOME/.config/claude-container"
+ENV_FILE="$CONFIG_DIR/env"
 
 die() { echo "claude-container: $*" >&2; exit 1; }
-usage() { sed -n '3,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+# Print the header comment (everything up to the first non-comment line).
+usage() { awk 'NR < 3 {next} !/^#/ {exit} {sub(/^# ?/, ""); print}' "${BASH_SOURCE[0]}"; }
 
 # ---- locate Dockerfile ------------------------------------------------------
 # 1. Dockerfile.dev in $PWD          -> project = $PWD (narrow scope)
@@ -197,15 +206,18 @@ run_args=(
 [[ -n ${ANTHROPIC_API_KEY:-} ]] && run_args+=(-e ANTHROPIC_API_KEY)
 [[ -f $ENV_FILE ]] && run_args+=(--env-file "$ENV_FILE")
 
-# Shared claude config for all containers: a managed settings file (read by
-# claude from /etc/claude-code) and the statusline script it references.
-# Both are optional and mounted read-only.
-if [[ -f $SCRIPT_DIR/managed-settings.json ]]; then
-  run_args+=(-v "$SCRIPT_DIR/managed-settings.json:/etc/claude-code/managed-settings.json:ro")
+# User customizations shared by all containers (both optional, read-only):
+# managed settings at claude's fixed path, and a free-form share dir whose
+# top-level entries land under /opt/claude-container. Entries are mounted
+# individually with host symlinks resolved, so they may be symlinks into
+# e.g. a dotfiles repo.
+if [[ -f $CONFIG_DIR/managed-settings.json ]]; then
+  run_args+=(-v "$(readlink -f "$CONFIG_DIR/managed-settings.json"):/etc/claude-code/managed-settings.json:ro")
 fi
-if [[ -f $SCRIPT_DIR/claude-statusline-command.sh ]]; then
-  run_args+=(-v "$SCRIPT_DIR/claude-statusline-command.sh:/opt/claude-container/statusline.sh:ro")
-fi
+for f in "$CONFIG_DIR"/share/*; do
+  [[ -e $f ]] || continue
+  run_args+=(-v "$(readlink -f "$f"):/opt/claude-container/${f##*/}:ro")
+done
 
 # Forward git identity so commits made inside the container are attributed.
 git_name=$(git config user.name 2>/dev/null || true)
