@@ -2,7 +2,11 @@
 
 Run Claude Code isolated inside [Apple Containers](https://github.com/apple/container).
 Each session is a throwaway container that can only see the project it is
-started in — nothing else on the host.
+started in — nothing else on the host. Project-specific containers are built
+from a `Dockerfile.dev` inside the project folder; if a project has none,
+the default image definition from this repo is used. The project code is not
+copied but mounted into the container, so edits land directly in your
+working tree.
 
 ## Prerequisites
 
