@@ -14,8 +14,9 @@ started in — nothing else on the host.
 - Anthropic auth: an API key, or a claude.ai subscription — run `/login` in a
   project's first session (the login persists in the project's state dir, see
   below).
-- Xcode Command Line Tools for `git` (used to forward your commit identity);
-  everything else the script needs is stock macOS (`bash`, `shasum`, `awk`).
+- `git` (used to forward your commit identity) — from the Xcode Command Line
+  Tools, Homebrew, or anywhere else; everything else the script needs is
+  stock macOS (`bash`, `shasum`, `awk`).
 - Network access on first start of a project — the image build pulls base
   images and installs Claude Code.
 
