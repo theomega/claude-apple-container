@@ -1,0 +1,173 @@
+# claude-container
+
+Run Claude Code isolated inside [Apple Containers](https://github.com/apple/container).
+Each session is a throwaway container that can only see the project it is
+started in — nothing else on the host.
+
+## Prerequisites
+
+- An Apple silicon Mac running macOS 15 or newer (macOS 26 recommended by
+  Apple for the container tool).
+- Apple's [`container`](https://github.com/apple/container) CLI:
+  `brew install container`, then `container system start` once (the script
+  auto-starts it afterwards).
+- Anthropic auth: an API key, or a claude.ai subscription — run `/login` in a
+  project's first session (the login persists in the project's state dir, see
+  below).
+- Xcode Command Line Tools for `git` (used to forward your commit identity);
+  everything else the script needs is stock macOS (`bash`, `shasum`, `awk`).
+- Network access on first start of a project — the image build pulls base
+  images and installs Claude Code.
+
+## Setup
+
+Clone this repository, then symlink the script into any directory on your
+`PATH`. Use a symlink rather than a copy — the script looks for
+`Dockerfile.default`, `managed-settings.json`, and
+`claude-statusline-command.sh` next to its real (resolved) location:
+
+```sh
+ln -s "$PWD/claude-container" ~/.local/bin/claude-container   # from the checkout; any PATH dir works
+export ANTHROPIC_API_KEY=sk-ant-...   # optional — or put it in ~/.config/claude-container/env
+```
+
+To use a claude.ai subscription instead of an API key, leave
+`ANTHROPIC_API_KEY` unset and run `/login` in a project's first session:
+claude prints a URL to open in your host browser and asks for the code back.
+The login is stored in the project's persistent state dir, so it survives the
+ephemeral containers. If the key is set, it takes precedence over a login.
+
+## Usage
+
+Run from anywhere inside a project (see project discovery below for what
+claude gets access to):
+
+```sh
+claude-container                  # start claude (skip-permissions) in the container
+claude-container --safe           # ...with normal permission prompts instead
+claude-container -p "fix tests"   # any other args are passed to claude
+claude-container shell            # bash in the same image/mount, no claude
+claude-container stop             # stop this project's running sessions
+claude-container stop --all       # stop sessions of every project
+claude-container ls               # list running sessions
+claude-container rebuild          # force image rebuild (--no-cache), then start
+```
+
+## How it works
+
+- **Project discovery**: the *project root* is what gets mounted and what
+  the image name, session names, `stop` scope, and claude state dir derive
+  from. It is determined in this order:
+  1. `Dockerfile.dev` in the current folder → the current folder is the
+     project (use this in a subfolder to fence claude into just that part
+     of a repo, with its own image).
+  2. Otherwise, if the current folder is inside a git repo and there is a
+     `Dockerfile.dev` at the repo root → the whole repo is the project
+     (claude sees the full repo; your shell's cwd stays the working
+     directory inside the container).
+  3. Otherwise → the current folder is the project, built from
+     `Dockerfile.default` next to the script.
+  `CC_DOCKERFILE=<path>` overrides the Dockerfile choice (project = current
+  folder). The image tag is the Dockerfile's content hash, so starting a
+  session is a single image-inspect call and any edit to the Dockerfile
+  triggers a rebuild on the next start (stale image versions are deleted
+  automatically).
+- **Session-scoped containers**: `claude` is the container's main process,
+  run with `--rm`. When the session ends the container is gone — no idle VMs
+  holding RAM. Container names are `claude-<project>-<pathhash>-<pid>`, so
+  concurrent sessions and same-named projects don't collide, and `stop`/`ls`
+  are project-aware.
+- **Isolation**: only the project root is mounted (writable, at its host
+  absolute path). `--dangerously-skip-permissions` is the default because
+  the container is the sandbox. Host git identity and `ANTHROPIC_API_KEY`
+  (if set) are forwarded as environment variables; nothing else from the
+  host is visible.
+- **Shared claude settings & statusline**: if present next to the script,
+  `managed-settings.json` is mounted read-only at
+  `/etc/claude-code/managed-settings.json` (claude's managed-settings path,
+  highest precedence — global defaults for every container session) and
+  `claude-statusline-command.sh` at `/opt/claude-container/statusline.sh`,
+  which the managed settings reference as the statusline. Edit
+  `managed-settings.json` to add more shared settings; both mounts are
+  skipped silently if the files don't exist.
+- **Persistent claude state**: a per-project state dir on the host
+  (`~/.cache/claude-container/<project>-<hash>/`) is mounted as claude's
+  `CLAUDE_CONFIG_DIR`, so state survives the ephemeral containers. First-run
+  prompts (theme, folder trust, API-key approval, bypass-permissions warning)
+  only need to be answered once per project (folder trust: once per launch
+  directory), OAuth credentials from `/login` are kept here too, and
+  `claude --resume` sees the project's earlier sessions. Delete the dir to
+  reset a project's claude state (including its login).
+
+## The Dockerfile.dev contract
+
+The Dockerfile owns the container environment. It must:
+
+1. Install Claude Code and put it on `PATH` — the native installer drops it in
+   `~/.local/bin`, which is *not* on `PATH` by default:
+
+   ```dockerfile
+   RUN curl -fsSL https://claude.ai/install.sh | bash
+   ENV PATH="/root/.local/bin:${PATH}"
+   ```
+
+2. Install whatever project toolchain claude should use (compilers, linters,
+   language runtimes). No `COPY` of sources needed — the project root is
+   bind-mounted at runtime.
+
+3. Install `jq` — the shared statusline script needs it (plus `bash`, `git`,
+   and `awk`, which most base images already have).
+
+Since the build context is the project directory, add a `.dockerignore` (e.g.
+`.git`, build output) if the project is large — it keeps rebuilds fast.
+
+## Example: Chrome and the chrome-devtools MCP server
+
+Claude can drive a real browser inside the sandbox. `Dockerfile.example.chrome`
+shows the recipe: on top of the usual Claude Code install it adds Google's apt
+repo and installs `google-chrome-stable` plus `nodejs`/`npm` (needed so claude
+can launch `npx`-based MCP servers). Copy it into a project as
+`Dockerfile.dev`, then register the MCP server (any arguments after `--` are
+passed to claude verbatim, so this runs `claude mcp add ...` inside the
+container):
+
+```sh
+claude-container -- mcp add chrome-devtools -- npx chrome-devtools-mcp@latest \
+  --headless=true --isolated=true --logFile=/tmp/log.txt \
+  "--chrome-arg='--no-sandbox'"
+```
+
+This only needs to be run once per project — the persistent claude state keeps
+the server across sessions. It is equivalent to this MCP config:
+
+```json
+"chrome-devtools": {
+  "type": "stdio",
+  "command": "npx",
+  "args": [
+    "chrome-devtools-mcp@latest",
+    "--headless=true",
+    "--isolated=true",
+    "--logFile=/tmp/log.txt",
+    "--chrome-arg='--no-sandbox'"
+  ],
+  "env": {}
+}
+```
+
+Flag notes: `--headless` because there is no display in the container,
+`--isolated` gives each session a throwaway Chrome profile, and
+`--chrome-arg='--no-sandbox'` is required because claude (and therefore
+Chrome) runs as root in the container — Chrome refuses to start its own
+sandbox as root, and the container is already the sandbox.
+`claude-container -- mcp list` verifies the server connects.
+
+## Configuration
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | — | forwarded into the container if set; takes precedence over an OAuth login |
+| `CC_MEMORY` | `8g` | container memory |
+| `CC_CPUS` | `4` | container CPUs |
+| `CC_DOCKERFILE` | — | explicit Dockerfile path, skips discovery |
+| `~/.config/claude-container/env` | — | optional `KEY=value` env file passed via `--env-file` (may hold the API key) |

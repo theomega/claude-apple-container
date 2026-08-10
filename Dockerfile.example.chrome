@@ -1,0 +1,18 @@
+FROM docker.io/debian:trixie
+
+# Base tools: curl for the installers below, gnupg for the Chrome repo key, jq for the shared statusline
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg jq\
+    && rm -rf /var/lib/apt/lists/*
+
+# Install claude
+RUN curl -fsSL https://claude.ai/install.sh | bash
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Add Chrome repo
+RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
+RUN echo "deb [arch=arm64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list
+
+# Add chrome and nodejs and npm (for MCP client support)
+RUN apt-get update && apt-get install -y --no-install-recommends google-chrome-stable nodejs npm \
+    && rm -rf /var/lib/apt/lists/*

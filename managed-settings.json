@@ -1,0 +1,6 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bash /opt/claude-container/statusline.sh"
+  }
+}
