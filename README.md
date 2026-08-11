@@ -91,7 +91,9 @@ claude-container rebuild          # force image rebuild (--no-cache), then start
   absolute path). `--dangerously-skip-permissions` is the default because
   the container is the sandbox. Host git identity, `TERM`, and
   `ANTHROPIC_API_KEY` (if set) are forwarded as environment variables;
-  nothing else from the host is visible.
+  nothing else from the host is visible. A `claude-container.args` file at
+  the project root can add extra `container run` flags (see
+  [Customization](#customization)).
 - **User customizations**: two optional paths under
   `~/.config/claude-container/` are mounted read-only into every container:
   `managed-settings.json` at `/etc/claude-code/managed-settings.json`
@@ -132,6 +134,24 @@ cp examples/managed-settings.json ~/.config/claude-container/
 
 The example statusline needs `jq` in the image; the default and example
 Dockerfiles install it.
+
+### Per-project `container run` arguments
+
+Some projects need `container run` flags the script doesn't set itself —
+e.g. a bigger `/dev/shm` for Chrome. Put them in a `claude-container.args`
+file at the project root (next to `Dockerfile.dev`): one argument per line,
+so no shell quoting is involved; blank lines and `#` comments are ignored.
+
+```
+# Chrome wants more shared memory
+--shm-size=2g
+```
+
+A flag with a separate value goes on two lines (`--shm-size` / `2g`), or use
+the `=` form on one. The arguments are appended after the script's own, so
+they can also override defaults like `--memory`. Like `Dockerfile.dev`, the
+file is part of the project and can widen the sandbox (e.g. mount extra host
+paths), so review it in repositories you don't trust.
 
 ## The Dockerfile.dev contract
 
@@ -207,3 +227,4 @@ sandbox as root, and the container is already the sandbox.
 | `~/.config/claude-container/env` | — | optional `KEY=value` env file passed via `--env-file` (may hold the API key) |
 | `~/.config/claude-container/managed-settings.json` | — | optional; mounted read-only at `/etc/claude-code/managed-settings.json` in every container |
 | `~/.config/claude-container/share/` | — | optional; directory mounted read-only at `/opt/claude-container` in every container |
+| `<project root>/claude-container.args` | — | optional; extra `container run` arguments, one per line (blank lines and `#` comments ignored) |

@@ -38,6 +38,9 @@
 #                       optional; entries mounted read-only under
 #                       /opt/claude-container in every container
 #                       (symlinks are resolved on the host first)
+#   <project root>/claude-container.args
+#                       optional; extra `container run` arguments, one per
+#                       line (blank lines and # comments ignored)
 #   CC_MEMORY           container memory (default: 8g)
 #   CC_CPUS             container CPUs (default: 4)
 #   CC_DOCKERFILE       explicit Dockerfile path, skips discovery
@@ -228,6 +231,17 @@ git_name=$(git config user.name 2>/dev/null || true)
 git_email=$(git config user.email 2>/dev/null || true)
 [[ -n $git_name ]]  && run_args+=(-e "GIT_AUTHOR_NAME=$git_name"  -e "GIT_COMMITTER_NAME=$git_name")
 [[ -n $git_email ]] && run_args+=(-e "GIT_AUTHOR_EMAIL=$git_email" -e "GIT_COMMITTER_EMAIL=$git_email")
+
+# Per-project extra `container run` arguments (optional): one argument per
+# line, so no shell quoting is involved; blank lines and # comments are
+# ignored. Appended last so they can override the defaults above.
+args_file="$root/claude-container.args"
+if [[ -f $args_file ]]; then
+  while IFS=$' \t\r' read -r line || [[ -n $line ]]; do
+    [[ -z $line || $line == \#* ]] && continue
+    run_args+=("$line")
+  done <"$args_file"
+fi
 
 if ((shell_mode)); then
   cmd=(bash)
