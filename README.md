@@ -76,11 +76,17 @@ claude-container rebuild          # force image rebuild (--no-cache), then start
   session is a single image-inspect call and any edit to the Dockerfile
   triggers a rebuild on the next start (stale image versions are deleted
   automatically).
-- **Session-scoped containers**: `claude` is the container's main process,
-  run with `--rm`. When claude exits, the container stops and is removed —
-  no idle VMs holding RAM. Container names are `claude-<project>-<pathhash>-<pid>`, so
+- **Session-scoped containers**: every invocation starts a fresh container,
+  even for the same project — there is no attaching to or reuse of a running
+  one. `claude` is the container's main process, run with `--rm`: when
+  claude exits, the container stops and is removed — no idle VMs holding
+  RAM. Container names are `claude-<project>-<pathhash>-<pid>`, so
   concurrent sessions and same-named projects don't collide, and `stop`/`ls`
-  are project-aware.
+  are project-aware. Running `claude-container` twice in the same project
+  therefore gives you two containers with one claude each. They are isolated
+  from each other at the process level but share the image, the writable
+  project mount, and the project's claude state dir — both claudes edit the
+  same working tree, and one `claude-container stop` stops them all.
 - **Isolation**: only the project root is mounted (writable, at its host
   absolute path). `--dangerously-skip-permissions` is the default because
   the container is the sandbox. Host git identity, `TERM`, and
