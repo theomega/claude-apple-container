@@ -80,10 +80,13 @@ claude-container rebuild          # force image rebuild (--no-cache), then start
   even for the same project — there is no attaching to or reuse of a running
   one. `claude` is the container's main process, run with `--rm`: when
   claude exits, the container stops and is removed — no idle VMs holding
-  RAM. Container names are `claude-<project>-<pathhash>-<pid>`, so
-  concurrent sessions and same-named projects don't collide, and `stop`/`ls`
-  are project-aware. Running `claude-container` twice in the same project
-  therefore gives you two containers with one claude each. They are isolated
+  RAM. A minimal init (`--init`) sits above claude at PID 1, reaping
+  orphaned processes (which would otherwise linger as zombies when claude
+  launches background processes) and forwarding signals. Container names
+  are `claude-<project>-<pathhash>-<pid>`, so concurrent sessions and
+  same-named projects don't collide, and `stop`/`ls` are project-aware.
+  Running `claude-container` twice in the same project therefore gives you
+  two containers with one claude each. They are isolated
   from each other at the process level but share the image, the writable
   project mount, and the project's claude state dir — both claudes edit the
   same working tree, and one `claude-container stop` stops them all.

@@ -196,6 +196,9 @@ session="${prefix}-$$"
 run_args=(
   --rm -i
   --name "$session"
+  # Minimal init as PID 1: reaps orphaned processes (claude never waits on
+  # reparented children, so they would pile up as zombies) and forwards signals.
+  --init
   --memory "$CC_MEMORY" --cpus "$CC_CPUS"
   # The project root is the only host data mount, at its host path.
   -v "$root:$root"
