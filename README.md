@@ -96,7 +96,7 @@ claude-container rebuild          # force image rebuild (--no-cache), then start
   `ANTHROPIC_API_KEY` (if set) are forwarded as environment variables;
   nothing else from the host is visible. A `claude-container.args` file at
   the project root can add extra `container run` flags (see
-  [Customization](#customization)).
+  [Advanced usage](#advanced-usage)).
 - **User customizations**: two optional paths under
   `~/.config/claude-container/` are mounted read-only into every container:
   `managed-settings.json` at `/etc/claude-code/managed-settings.json`
@@ -140,24 +140,6 @@ cp examples/managed-settings.json ~/.config/claude-container/
 The example statusline needs `jq` in the image; the default and example
 Dockerfiles install it.
 
-### Per-project `container run` arguments
-
-Some projects need `container run` flags the script doesn't set itself —
-e.g. a bigger `/dev/shm` for Chrome. Put them in a `claude-container.args`
-file at the project root (next to `Dockerfile.dev`): one argument per line,
-so no shell quoting is involved; blank lines and `#` comments are ignored.
-
-```
-# Chrome wants more shared memory
---shm-size=2g
-```
-
-A flag with a separate value goes on two lines (`--shm-size` / `2g`), or use
-the `=` form on one. The arguments are appended after the script's own, so
-they can also override defaults like `--memory`. Like `Dockerfile.dev`, the
-file is part of the project and can widen the sandbox (e.g. mount extra host
-paths), so review it in repositories you don't trust.
-
 ## The Dockerfile.dev contract
 
 The Dockerfile owns the container environment. It must:
@@ -180,7 +162,53 @@ The Dockerfile owns the container environment. It must:
 Since the build context is the project directory, add a `.dockerignore` (e.g.
 `.git`, build output) if the project is large — it keeps rebuilds fast.
 
-## Example: Chrome and the chrome-devtools MCP server
+## Advanced usage
+
+Recipes for needs beyond the plain start-a-session flow. Most of them build
+on the `claude-container.args` file described first.
+
+### Per-project `container run` arguments
+
+Some projects need `container run` flags the script doesn't set itself —
+e.g. a bigger `/dev/shm` for Chrome. Put them in a `claude-container.args`
+file at the project root (next to `Dockerfile.dev`): one argument per line,
+so no shell quoting is involved; blank lines and `#` comments are ignored.
+
+```
+# Chrome wants more shared memory
+--shm-size=2g
+```
+
+A flag with a separate value goes on two lines (`--shm-size` / `2g`), or use
+the `=` form on one. The arguments are appended after the script's own, so
+they can also override defaults like `--memory`. Like `Dockerfile.dev`, the
+file is part of the project and can widen the sandbox (e.g. mount extra host
+paths), so review it in repositories you don't trust.
+
+### Mounting a second host directory
+
+By default only the project root is visible inside the container. If claude
+needs another host directory too — reference docs, a sibling library, a
+dataset — add a `--volume` flag to `claude-container.args`:
+
+```
+# API docs claude may read, but not modify
+--volume
+/Users/me/reference-docs:/mnt/docs:ro
+```
+
+The format is `host-path:container-path[:ro]`; append `:ro` to make the
+mount read-only (recommended for anything claude only needs to consult),
+omit it for a writable mount. The lines are passed to `container run`
+verbatim — no shell involved — so use absolute paths (`~` is not expanded)
+and note that host paths in the file apply to everyone who runs a session
+in the project. Tell claude the mount exists (e.g. mention `/mnt/docs` in
+the project's `CLAUDE.md`), since it only sees the container path.
+
+Every extra mount widens the sandbox, deliberately: prefer `:ro`, and mount
+the most specific directory that suffices rather than e.g. your home folder.
+
+### Chrome and the chrome-devtools MCP server
 
 Claude can drive a real browser inside the sandbox. `Dockerfile.example.chrome`
 shows the recipe: on top of the usual Claude Code install it adds Google's apt
