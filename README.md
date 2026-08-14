@@ -8,6 +8,36 @@ the default image definition from this repo is used. The project code is not
 copied but mounted into the container, so edits land directly in your
 working tree.
 
+## Comparison to similar tools
+
+- **[Dev Containers](https://containers.dev)**: same idea — a per-project
+  Dockerfile, the source tree bind-mounted — but devcontainers are
+  long-lived, editor-integrated, and Docker-based. claude-container
+  sessions are throwaway, VM-isolated (via Apple's `container`), and need
+  nothing but this script.
+- **[Docker Sandboxes](https://docs.docker.com/ai/sandboxes/security/)**
+  (`docker sandbox run claude`): closest in purpose — Claude Code in a
+  microVM with the project mounted. It goes further on security: API
+  credentials never enter the VM (a host-side proxy injects auth headers
+  into outbound requests) and network egress is deny-by-default. The
+  trade-off is Docker Desktop plus Docker's sandbox images, where here the
+  project owns its environment via `Dockerfile.dev`.
+- **[Lima](https://lima-vm.io/docs/examples/ai/)**: also VM-based, with
+  documented agent setups and project-only mounts. Instances are long-lived
+  and provisioned by template rather than per-project throwaway containers,
+  but its `--sync` mode adds something this tool doesn't have: agent changes
+  land in a copy and merge back only on your accept.
+- **[Claude Code's built-in
+  sandbox](https://code.claude.com/docs/en/sandbox-environments#sandbox-runtime)**:
+  OS-level (Seatbelt) sandboxing with zero setup, but weaker isolation than
+  a per-session VM and no custom toolchain image.
+
+Compared to all of these, claude-container optimizes for being a single
+bash script over Apple's stock tooling. It does not filter network egress,
+and secrets reach the container as plain environment variables — if a
+prompt-injected agent exfiltrating a key is in your threat model, Docker
+Sandboxes has the stronger story today.
+
 ## Prerequisites
 
 - An Apple silicon Mac running macOS 15 or newer (macOS 26 recommended by
