@@ -111,7 +111,9 @@ claude-container rebuild          # force image rebuild (--no-cache), then start
   prompts (theme, folder trust, API-key approval, bypass-permissions warning)
   only need to be answered once per project (folder trust: once per launch
   directory), OAuth credentials from `/login` are kept here too, and
-  `claude --resume` sees the project's earlier sessions. Delete the dir to
+  `claude --resume` sees the project's earlier sessions. The state dir is
+  keyed on the project root's path only, so editing the Dockerfile rebuilds
+  the image but keeps the claude state. Delete the dir to
   reset a project's claude state (including its login).
 
 ## Customization
