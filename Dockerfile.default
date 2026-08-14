@@ -1,9 +1,9 @@
 # Fallback image used by claude-container when a project has no
-# Dockerfile.dev: Debian + common CLI tools + Claude Code.
+# Dockerfile.dev: Debian + common CLI tools + python (for claude) + Claude Code.
 FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl git ripgrep jq less procps unzip \
+        ca-certificates curl git ripgrep jq less procps unzip python3 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://claude.ai/install.sh | bash
