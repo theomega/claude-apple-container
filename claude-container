@@ -40,7 +40,9 @@
 #                       (symlinks are resolved on the host first)
 #   <project root>/claude-container.args
 #                       optional; extra `container run` arguments, one per
-#                       line (blank lines and # comments ignored)
+#                       line (blank lines and # comments ignored). {{root}}
+#                       expands to the project root, {{cache}} to a
+#                       per-project host scratch dir (created on use)
 #   CC_MEMORY           container memory (default: 8g)
 #   CC_CPUS             container CPUs (default: 4)
 #   CC_DOCKERFILE       explicit Dockerfile path, skips discovery
@@ -238,10 +240,19 @@ git_email=$(git config user.email 2>/dev/null || true)
 # Per-project extra `container run` arguments (optional): one argument per
 # line, so no shell quoting is involved; blank lines and # comments are
 # ignored. Appended last so they can override the defaults above.
+# Two placeholders keep the file portable across users and machines:
+# {{root}} expands to the project root's host path, {{cache}} to a
+# per-project scratch dir on the host (e.g. to shadow node_modules, see
+# README). Bind sources under {{cache}} are created automatically — they
+# are ours, unlike arbitrary host paths from a repo-committed file.
 args_file="$root/claude-container.args"
+cache_dir="$HOME/.cache/claude-container/$prefix-cache"
 if [[ -f $args_file ]]; then
   while IFS=$' \t\r' read -r line || [[ -n $line ]]; do
     [[ -z $line || $line == \#* ]] && continue
+    line=${line//'{{root}}'/$root}
+    line=${line//'{{cache}}'/$cache_dir}
+    [[ $line == "$cache_dir/"* ]] && mkdir -p "${line%%:*}"
     run_args+=("$line")
   done <"$args_file"
 fi

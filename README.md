@@ -215,6 +215,17 @@ they can also override defaults like `--memory`. Like `Dockerfile.dev`, the
 file is part of the project and can widen the sandbox (e.g. mount extra host
 paths), so review it in repositories you don't trust.
 
+Two placeholders are expanded in each line, so the file stays portable
+across users and machines (the file has no other shell processing — `~` and
+`$VARS` are not expanded):
+
+- `{{root}}` — the project root's absolute host path.
+- `{{cache}}` — a per-project scratch dir on the host
+  (`~/.cache/claude-container/<project>-<hash>-cache/`). Mount sources under
+  it are created automatically, and it survives sessions — use it for
+  container-side state that should not live in the project tree (see the
+  `node_modules` recipe below). Delete the dir to reset that state.
+
 ### Mounting a second host directory
 
 By default only the project root is visible inside the container. If claude
@@ -237,6 +248,43 @@ the project's `CLAUDE.md`), since it only sees the container path.
 
 Every extra mount widens the sandbox, deliberately: prefer `:ro`, and mount
 the most specific directory that suffices rather than e.g. your home folder.
+
+### Platform-specific dependency dirs (`node_modules`)
+
+Since the containers are Linux VMs and the project tree is shared with the
+host, an `npm install` run by claude fills `node_modules` with Linux
+binaries — and nothing runs on the macOS side afterwards (or vice versa),
+until the directory is deleted. The same applies to any dependency dir with
+native artifacts, e.g. a Python `.venv`.
+
+The fix is to shadow the directory inside the container: mount a dir from
+the project's `{{cache}}` scratch area over it, so the container gets its
+own Linux `node_modules` and the host's macOS one stays untouched
+underneath. In `claude-container.args`:
+
+```
+# keep Linux node_modules out of the host working tree
+--volume
+{{cache}}/node_modules:{{root}}/node_modules
+```
+
+How it behaves:
+
+- The host's `node_modules` is hidden (not modified) while a session runs;
+  from the host it stays intact the whole time. If the project has none,
+  an empty `node_modules` dir appears in the host tree as the mount point —
+  harmless.
+- The container starts with the cache dir's contents, so claude runs
+  `npm install` once and the Linux install persists across sessions in
+  `~/.cache/claude-container/<project>-<hash>-cache/node_modules`. Delete
+  that dir to reset it.
+- `package.json` and the lockfile live in the shared project tree, so host
+  and container installs stay in sync from the same lockfile.
+- Monorepos: every nested `node_modules` (e.g. `packages/*/node_modules`)
+  needs its own line pair.
+- Ephemeral alternative: `--tmpfs` / `{{root}}/node_modules` gives a fresh,
+  RAM-backed (counts against `CC_MEMORY`) dir each session with zero host
+  residue — at the cost of an `npm install` per session.
 
 ### Chrome and the chrome-devtools MCP server
 
@@ -290,4 +338,4 @@ sandbox as root, and the container is already the sandbox.
 | `~/.config/claude-container/env` | — | optional `KEY=value` env file passed via `--env-file` (may hold the API key) |
 | `~/.config/claude-container/managed-settings.json` | — | optional; mounted read-only at `/etc/claude-code/managed-settings.json` in every container |
 | `~/.config/claude-container/share/` | — | optional; directory mounted read-only at `/opt/claude-container` in every container |
-| `<project root>/claude-container.args` | — | optional; extra `container run` arguments, one per line (blank lines and `#` comments ignored) |
+| `<project root>/claude-container.args` | — | optional; extra `container run` arguments, one per line (blank lines and `#` comments ignored; `{{root}}` and `{{cache}}` are expanded) |
