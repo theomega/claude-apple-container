@@ -327,6 +327,60 @@ Chrome) runs as root in the container — Chrome refuses to start its own
 sandbox as root, and the container is already the sandbox.
 `claude-container -- mcp list` verifies the server connects.
 
+### Podman inside the sandbox
+
+Claude can build and run containers inside the session — for compose-based
+dev stacks, integration tests against a real database, or building the
+project's own image. `Dockerfile.example.podman` shows the recipe: on top
+of the default image it installs `podman`, `podman-compose`, the
+`podman-docker` shim (so `docker run` / `docker compose` work too), plus
+`aardvark-dns` and `nftables`, which the Debian package only recommends but
+netavark needs for container DNS and port publishing. Its entrypoint does
+the per-start setup podman needs (writable `/proc/sys`, cgroup controller
+delegation, build ulimits) and prints a hint if the capabilities below are
+missing. Copy it into a project as `Dockerfile.dev`, and add this
+`claude-container.args` next to it:
+
+```
+# podman needs these; see README "Podman inside the sandbox"
+--cap-add
+CAP_SYS_ADMIN
+--cap-add
+CAP_NET_ADMIN
+--cap-add
+CAP_SYS_PTRACE
+```
+
+`CAP_SYS_ADMIN` lets podman mount container filesystems and create
+namespaces, `CAP_NET_ADMIN` sets up the bridge network and published ports,
+and `CAP_SYS_PTRACE` is what `podman build` needs to attach to its build
+container's network namespace. Rootless podman does not avoid any of this:
+mapping subordinate uids needs `CAP_SYS_ADMIN` as well.
+
+What granting them means: the session is already root inside a
+per-session VM, and the VM — not Linux capabilities — is the boundary to
+macOS. The capabilities extend root's reach over the *guest* kernel (mounts,
+sysctls, BPF, tracing any process in the VM); they do not extend what the
+guest can reach on the host. Host bind mounts are enforced host-side, so a
+`:ro` mount stays read-only even after a `remount,rw` inside the VM. The
+practical cost is a larger guest-kernel attack surface for a prompt-injected
+agent, which only matters if a guest-to-host escape in the virtualization
+stack is in your threat model. Don't add these to projects that don't need
+containers.
+
+Notes:
+
+- Nested containers run with normal bridged networking: compose services
+  find each other by name, and published ports are reachable from claude's
+  shell at `127.0.0.1:<port>`. To reach one from the Mac, publish it from
+  the outer container too (`--publish` / `8080:8080` in
+  `claude-container.args`).
+- Image storage lives inside the VM and is discarded with the session, so
+  images are pulled again next time. It cannot be moved to a `{{cache}}`
+  mount: overlayfs does not work on top of virtiofs.
+- Nested containers share the VM's `CC_MEMORY` / `CC_CPUS` budget; size it
+  for the stack you run (`podman run --memory` limits inside work too).
+
 ## Configuration
 
 | Variable | Default | Meaning |

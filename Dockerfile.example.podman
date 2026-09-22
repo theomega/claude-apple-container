@@ -1,0 +1,75 @@
+# Example Dockerfile.dev: Claude Code + podman, so claude can build and run
+# containers (and compose stacks) inside the sandbox. Copy it into a project
+# as Dockerfile.dev.
+#
+# Podman needs three capabilities the runtime does not grant by default:
+# CAP_SYS_ADMIN (mounting container rootfs, namespaces), CAP_NET_ADMIN
+# (bridged networking and published ports) and CAP_SYS_PTRACE (`podman
+# build` reads the build container's network namespace). Put this
+# claude-container.args next to the Dockerfile; the README's "Podman inside
+# the sandbox" section explains what they imply:
+#
+#   --cap-add
+#   CAP_SYS_ADMIN
+#   --cap-add
+#   CAP_NET_ADMIN
+#   --cap-add
+#   CAP_SYS_PTRACE
+FROM docker.io/debian:trixie-slim
+
+# The Dockerfile.default tool set, plus the container stack: podman (pulls in
+# crun and netavark), podman-compose, podman-docker (a `docker` CLI shim, so
+# scripts and claude's habits keep working), and two pieces the podman
+# package only recommends: aardvark-dns (container-name DNS, which compose
+# service discovery relies on) and nftables (netavark's firewall backend).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl git ripgrep jq less procps unzip python3 python3-pip \
+        podman podman-compose podman-docker aardvark-dns nftables \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install claude
+RUN curl -fsSL https://claude.ai/install.sh | bash
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Podman defaults for a non-interactive user: resolve short image names
+# (`postgres:16`, compose files) against docker.io instead of prompting, and
+# silence the podman-docker "emulating docker" banner.
+RUN mkdir -p /etc/containers/registries.conf.d \
+    && printf 'unqualified-search-registries = ["docker.io"]\n' \
+         > /etc/containers/registries.conf.d/10-docker-io.conf \
+    && touch /etc/containers/nodocker
+
+# Runtime setup podman needs, done at container start (none of it can be
+# baked into the image):
+# - netavark configures bridged networking through sysctls, but the runtime
+#   mounts /proc/sys read-only: remount it writable (needs CAP_SYS_ADMIN).
+# - cgroup v2 controllers are not delegated below the container's cgroup
+#   root, and crun refuses to start a nested container without them. Move
+#   our processes into a leaf cgroup and enable every controller for the
+#   subtree, the same dance docker:dind does.
+# - `podman build` asks crun to raise the build container's nproc/nofile
+#   hard limits to 1048576, which needs CAP_SYS_RESOURCE. Pin the defaults
+#   to this container's hard limits instead (they depend on --memory, so
+#   they cannot be fixed at build time).
+COPY <<'EOF' /usr/local/bin/podman-entrypoint
+#!/bin/bash
+if ! mount -o remount,rw,bind /proc/sys 2>/dev/null; then
+  echo "podman-entrypoint: cannot remount /proc/sys writable -- podman needs" >&2
+  echo "  --cap-add CAP_SYS_ADMIN, CAP_NET_ADMIN and CAP_SYS_PTRACE in claude-container.args" >&2
+fi
+if [ -w /sys/fs/cgroup/cgroup.subtree_control ]; then
+  mkdir -p /sys/fs/cgroup/init
+  for pid in $(cat /sys/fs/cgroup/cgroup.procs); do
+    echo "$pid" > /sys/fs/cgroup/init/cgroup.procs 2>/dev/null
+  done
+  sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers \
+    > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null
+fi
+nproc=$(ulimit -H -u); nofile=$(ulimit -H -n)
+mkdir -p /etc/containers/containers.conf.d
+printf '[containers]\ndefault_ulimits = ["nproc=%s:%s", "nofile=%s:%s"]\n' \
+  "$nproc" "$nproc" "$nofile" "$nofile" > /etc/containers/containers.conf.d/10-ulimits.conf
+exec "$@"
+EOF
+RUN chmod +x /usr/local/bin/podman-entrypoint
+ENTRYPOINT ["/usr/local/bin/podman-entrypoint"]
